@@ -17,19 +17,32 @@ def fPixels(origHeight, vertRangeDeg):
 
 # Project one half of image, centred at xMid, to output spherical projection.
 def projectHalf(side, f, xMid, origXmid, maxXdiff, origHeight, origYcentre, inPixels, draw):
-    for x in range(xMid - maxXdiff, xMid + maxXdiff):
-        print(f'{side} image, column {x - xMid + maxXdiff + 1} of {2 * maxXdiff + 1}', end='\r')
+    for x in range(xMid, xMid + maxXdiff):
+        x2 = xMid - (x - xMid)
+        if (x & 15 == 0):
+            print(f'{side} image, column {x - x2} of {(maxXdiff + 1) << 1}', end='\r')
         angleX = math.pi * (x - xMid) / vrFieldDim
         horizDist = f / math.cos(angleX)
         maxYtan = origHeight / (2 * horizDist)
         maxYdiff = int(math.atan(maxYtan) * vrFieldDim / math.pi)
-        origX = int(f * math.tan(angleX)) + origXmid
+        origXdiff = int(f * math.tan(angleX))
+        origX = origXmid + origXdiff
+        origX2 = origXmid - origXdiff
 
         # Copy pixels from original image to projection
-        for y in range(yCentre - maxYdiff, yCentre + maxYdiff):
+        for y in range(yCentre, yCentre + maxYdiff):
             angleY = math.pi * (y - yCentre) / vrFieldDim
-            origY = int(horizDist * math.tan(angleY)) + origYcentre
+            origYdiff = int(horizDist * math.tan(angleY))
+            origY = origYcentre + origYdiff
+            origY2 = origYcentre - origYdiff
+            y2 = yCentre - (y - yCentre)
             draw.point([x,y], inPixels[origX, origY])
+            if (x2 != x):
+                draw.point([x2,y], inPixels[origX2, origY])
+            if (y2 != y):
+                draw.point([x,y2], inPixels[origX, origY2])
+                if (x2 != x):
+                    draw.point([x2,y2], inPixels[origX2, origY2])
     
     return
 
