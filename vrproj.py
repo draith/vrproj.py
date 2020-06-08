@@ -4,81 +4,72 @@ import sys
 import math
 import os
 import fnmatch
+import numpy as np
 from PIL import Image, ImageDraw
+from skimage.transform import warp
 
-# f = 3250 # Moto G7: 3250 pixels.
 vertRangeDeg = 60 # default vertical range of image (60 degrees)
 vrFieldDim = 3000 # pixels per 180 degrees.
+vRange = 0
+maxAlpha = 0
+uRange = 0 # calculated from f and origX
 yCentre = int(vrFieldDim/2) # centre height (straight ahead)
+maxPhi = 0 # max horizontal angle from centre
 
 # Equivalent pixel distance from observer to centre of original image, given image height and arc.
 def fPixels(origHeight, vertRangeDeg):
     return origHeight * 0.5 / math.tan(vertRangeDeg * math.pi / 360)
 
+f = 1
+origXcentre, origYcentre = 0, 0
+
+def warpFunction(uv):
+    u = uv[:,0]
+    v = uv[:,1]
+
+    phi = maxPhi * (2 * u / uRange - 1)         # phi = horiz arc from centre
+    x = f * np.tan(phi) + origXcentre           # x = horiz coordinate on original image plane
+    d = f / np.cos(phi)                         # d = distance in pixels to centre line at phi
+
+    alpha = maxAlpha * (2 * v / vRange - 1)     # alpha = vertical arc
+    y = d * np.tan(alpha) + origYcentre         # y = vertical coordinate on original image plane
+
+    return np.vstack((x, y)).T                  # Combine x & y coordinates for warp function
+
+def warpedImage(orig):
+    origData = np.array(orig)
+    warpedData = warp(origData, warpFunction, output_shape=(vRange, uRange))
+    warpedData = (warpedData * 255).astype(np.uint8)
+    return Image.fromarray(warpedData)
+
 def processFile(filename, vrFilename):
-    inImage = Image.open(filename)
-    inPixels = inImage.load()
+    stereoPair = Image.open(filename)
 
-    # Black background image - side by side
+    global origXcentre
+    global origYcentre
+    origX, origY = stereoPair.size
+    origXcentre = round(origX / 4)
+    origYcentre = round(origY / 2)
+
+    global f
+    f = fPixels(origY, vertRangeDeg)
+    global maxPhi
+    maxPhi = math.atan(origXcentre/f)
+    global uRange
+    uRange = round(vrFieldDim * 2 * maxPhi / math.pi)
+    uOffset = round((vrFieldDim - uRange) / 2)
+    vOffset = round((vrFieldDim - vRange) / 2)
+
+    # Black background
     vrImage = Image.new("RGB", (2 * vrFieldDim, vrFieldDim))
-    d = ImageDraw.Draw(vrImage)
 
-    origWidth, origHeight = inImage.size
+    # Left image
+    orig = stereoPair.crop((0, 0, round(origX/2), origY))
+    vrImage.paste(warpedImage(orig), (uOffset, vOffset))
 
-    # origWidth = width of one side of the original stereo pair
-    origWidth = int(origWidth / 2)
-
-    f = fPixels(origHeight, vertRangeDeg)
-
-    origXcentre = int(origWidth / 2)
-    origYcentre = int(origHeight / 2)
-
-    print(f'{filename}: {origWidth} x {origHeight} pixels.')
-
-    maxXtan = origWidth / (2 * f)
-    maxXdiff = int(math.atan(maxXtan) * vrFieldDim / math.pi)
-
-    xCentre = int(vrFieldDim/2)
-
-    for x in range(xCentre, xCentre + maxXdiff):
-        # x2: left half of left image
-        x2 = xCentre - (x - xCentre)
-
-        # xr & x2r: right and left halves of right image
-        xr = x + vrFieldDim
-        x2r = x2 + vrFieldDim
-
-        if (x & 15 == 0):
-            print(f'Column {x - x2} of {(maxXdiff + 1) << 1}', end='\r')
-        
-        angleX = math.pi * (x - xCentre) / vrFieldDim
-        horizDist = f / math.cos(angleX)
-        maxYtan = origHeight / (2 * horizDist)
-        maxYdiff = int(math.atan(maxYtan) * vrFieldDim / math.pi)
-        origXdiff = int(f * math.tan(angleX))
-        origX = origXcentre + origXdiff
-        origX2 = origXcentre - origXdiff
-        origXr = origX + origWidth
-        origX2r = origX2 + origWidth
-
-        # Copy pixels from original image to projection
-        for y in range(yCentre, yCentre + maxYdiff):
-            angleY = math.pi * (y - yCentre) / vrFieldDim
-            origYdiff = int(horizDist * math.tan(angleY))
-            origY = origYcentre + origYdiff
-            origY2 = origYcentre - origYdiff
-            y2 = yCentre - (y - yCentre)
-            d.point([x,y], inPixels[origX, origY])
-            d.point([xr,y], inPixels[origXr, origY])
-            if (x2 != x):
-                d.point([x2,y], inPixels[origX2, origY])
-                d.point([x2r,y], inPixels[origX2r, origY])
-            if (y2 != y):
-                d.point([x,y2], inPixels[origX, origY2])
-                d.point([xr,y2], inPixels[origXr, origY2])
-                if (x2 != x):
-                    d.point([x2,y2], inPixels[origX2, origY2])
-                    d.point([x2r,y2], inPixels[origX2r, origY2])
+    # Right image
+    orig = stereoPair.crop((round(origX/2), 0, origX, origY))
+    vrImage.paste(warpedImage(orig), (uOffset + vrFieldDim, vOffset))
 
     vrImage.save(vrFilename)
 
@@ -87,6 +78,9 @@ vertRangeInput = input("Max vertical size (60 deg): ")
 if vertRangeInput != "":
     vertRangeDeg = int(vertRangeInput)
 
+vRange = round(vrFieldDim * vertRangeDeg / 180)
+maxAlpha = vertRangeDeg * math.pi / 360     # alpha = vertical arc from centre
+
 files = os.listdir()
 
 for file in files:
@@ -94,4 +88,5 @@ for file in files:
         nameBase, nameExt = os.path.splitext(file)
         vrName = nameBase + "_vr" + nameExt
         if vrName not in files:
+            print("Processing " + file)
             processFile(file, vrName)
