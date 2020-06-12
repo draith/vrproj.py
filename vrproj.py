@@ -5,7 +5,7 @@ import math
 import os
 import fnmatch
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 from skimage.transform import warp
 
 vertRangeDeg = 60 # default vertical range of image (60 degrees)
