@@ -12,67 +12,135 @@ from skimage.exposure import match_histograms
 from skimage.exposure import rescale_intensity
 from skimage.feature import canny
 
-# from skimage.color import rgb2gray
-# from skimage.registration import optical_flow_tvl1
-
 orig = Image.open("Alfa3_Marilin.jpg")
+limX, limY = orig.size
+maxShift = round(limX / 10)
 
 red, green, blue = orig.split()
 
-redEdges = canny(np.array(red))
-greenEdges = canny(np.array(green))
+redArray = np.array(red)
+greenArray = np.array(green)
+blueArray = np.array(blue)
 
-#red_warp = warp(np.array(red), np.array([row_coords + flowX, col_coords]), mode='nearest')
-#Image.fromarray((red_warp * 255).astype(np.uint8)).show()
+sigma=maxShift/10
+low_threshold=0.25
+high_threshold=0.75
 
-Image.fromarray((redEdges * 255).astype(np.uint8)).show()
-Image.fromarray((greenEdges * 255).astype(np.uint8)).show()
+while True:
+    redEdges = canny(redArray, sigma, low_threshold, high_threshold, None, True)
+    greenEdges = canny(greenArray, sigma, low_threshold, high_threshold, None, True)
 
-limX, limY = orig.size
+    Image.fromarray((redEdges * 255).astype(np.uint8)).show()
+    Image.fromarray((greenEdges * 255).astype(np.uint8)).show()
 
-maxShift = round(limX / 10)
+    newSigma = input(f"sigma [{sigma}]: ")
+    newLow = input(f"Low join threshold [{low_threshold}]: ")
+    newHigh = input(f"High join threshold [{high_threshold}]: ")
 
-# Find offset for each point giving max run length at that point
-Offsets = np.zeros(redEdges.shape)
+    if newSigma == "" and newLow == "" and newHigh == "":
+        break
+
+    if newSigma != "":
+        sigma = float(newSigma)
+    if newLow != "":
+        low_threshold = float(newLow)
+    if newHigh != "":
+        high_threshold = float(newHigh)
+
+leftImage = np.array(orig)
+rightImage = np.array(orig)
+
+
 for y in range(limY):
-    print(f"Line {y+1} of {limY + 1}")
+    print(f"Line {y+1} of {limY + 1}", end='\r')
+    # Find any overlapping regions between edges, and shift channels to match in each output image
     redLine = redEdges[y]
     greenLine = greenEdges[y]
-    maxRuns = np.zeros(limX)
-    for offset in range(-maxShift, maxShift):
-        # Identify runs of equality between redLine[x] and greenLine[x+delta]
-        runStartX = 0
-        x = 0
-        while x <= limX:
-            if x == limX or redLine[x] != greenLine[min(max(0, x+offset), limX-1)]:
-                # end of run - record offset where runLength > max
-                runLength = x - runStartX
-                for runX in range(runStartX, min(x, limX-1)):
-                    if runLength > maxRuns[runX]:
-                        maxRuns[runX] = runLength
-                        Offsets[y][runX] = offset
+    redStarts = []
+    greenStarts = []
+    redEnds = []
+    greenEnds = []
+    redRunStart = 0
+    greenRunStart = 0
+    lastRed = redLine[0]
+    lastGreen = greenLine[0]
+    lastRedChange = 0
+    lastGreenChange = 0
 
-                # start of next candidate run
-                runStartX = x + 1
-            x += 1
+    # Get runs between edges >= maxShift, in red and green images
 
-    # # Display runs
-    # runStart = 0
-    # runOffset = 0
-    # for x in range(limX+1):
-    #     if x == limX or Offsets[y][x] != runOffset:
-    #         if x > 0:
-    #             print(f"{runStart} to {x-1}: {runOffset}")
-    #         if x < limX:
-    #             runOffset = Offsets[y][x]
-    #             runStart = x
+    for x in range(limX):
+        if redLine[x] != lastRed:
+            if redLine[x] and x > lastRedChange + (2*maxShift):
+                # End of a run between edges
+                redStarts.append(lastRedChange)
+                redEnds.append(x)
+                # for rangeX in range(lastRedChange,x):
+                #     rangeImage[y, rangeX, 0] = 255
+            lastRedChange = x
+            lastRed = redLine[x]
 
-Image.fromarray((Offsets + maxShift) * 255/maxShift.astype(np.uint8)).show()
+        if greenLine[x] != lastGreen:
+            if greenLine[x] and x > lastGreenChange + (2*maxShift):
+                # End of a run between edges
+                greenStarts.append(lastGreenChange)
+                greenEnds.append(x)
+                # for rangeX in range(lastGreenChange,x):
+                #     rangeImage[y, rangeX, 1] = 255
+            lastGreenChange = x
+            lastGreen = greenLine[x]
+    
+    # Find matching runs in red and green, and write shifted red...
+    redRunNumber = 0
+    greenRunNumber = 0
+    redX = 0
+    shiftedRedX = 0
+    redStart = 0
+    while redRunNumber < len(redStarts) and greenRunNumber < len(greenStarts):
+        # Search for matching starts
+        if greenStarts[greenRunNumber] > redStarts[redRunNumber] + maxShift:
+            redRunNumber += 1
+        elif greenStarts[greenRunNumber] < redStarts[redRunNumber] - maxShift:
+            greenRunNumber += 1
+        else:
+            # Matching starts - note starting positions and look for matching ends
+            redStart = redStarts[redRunNumber]
+            greenStart = greenStarts[greenRunNumber]
 
-# build an RGB image with the registered sequence
-# reg_im = np.zeros((nr, nc, 3))
-# reg_im[..., 0] = red_warp
-# reg_im[..., 1] = np.array(green)
-# reg_im[..., 2] = np.array(blue)
-# Image.fromarray(reg_im).show()
-# orig.show()
+            # Perform shifts, up to start
+            if greenStart > shiftedRedX:
+                xStep = (redStart - redX) / (greenStart - shiftedRedX)
+                for x in range(shiftedRedX, greenStart):
+                    rightImage[y, x, 0] = redArray[y, round(redX)]
+                    redX += xStep
+                redX = redStart
+                shiftedRedX = greenStart
+
+            while redRunNumber < len(redEnds) and greenRunNumber < len(greenEnds):
+                if greenEnds[greenRunNumber] > redEnds[redRunNumber] + maxShift:
+                    redRunNumber += 1
+                elif greenEnds[greenRunNumber] < redEnds[redRunNumber] - maxShift:
+                    greenRunNumber += 1
+                else:
+                    # Matching ends => matching RUNS - write shifted red pixels through range
+                    # Start point: shiftedRedX from redX
+                    # End point: greenEnd from redEnd
+                    xStep = (redEnds[redRunNumber] - redStart) / (greenEnds[greenRunNumber] - greenStart) 
+                    for x in range(shiftedRedX, greenEnds[greenRunNumber]):
+                        rightImage[y, x, 0] = redArray[y, round(redX)]
+                        redX += xStep
+
+                    redX = redEnds[redRunNumber]
+                    shiftedRedX = greenEnds[greenRunNumber]
+                    redRunNumber += 1
+                    greenRunNumber += 1
+
+    # Now finish line from redX to limX
+    if shiftedRedX < limX:
+        xStep = (limX - redX) / (limX - shiftedRedX)
+        for x in range(shiftedRedX, limX):
+            rightImage[y, x, 0] = redArray[y,min(round(redX),limX-1)]
+            redX += xStep
+
+# Image.fromarray(rangeImage).show()
+Image.fromarray(rightImage).show()
