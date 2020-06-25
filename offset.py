@@ -11,7 +11,7 @@ from skimage.feature import canny
 
 orig = Image.open("Alfa3_Marilin.jpg")
 limX, limY = orig.size
-maxShift = round(limX / 10)
+maxShift = round(limX / 40)
 
 red, green, blue = orig.split()
 
@@ -19,16 +19,13 @@ redArray = np.array(red)
 greenArray = np.array(green)
 blueArray = np.array(blue)
 
-sigma=maxShift/10
+sigma=maxShift/3
 low_threshold=0.25
 high_threshold=0.75
 
 while True:
     redEdges = canny(redArray, sigma, low_threshold, high_threshold, None, True)
     greenEdges = canny(greenArray, sigma, low_threshold, high_threshold, None, True)
-
-    Image.fromarray((redEdges * 255).astype(np.uint8)).show()
-    Image.fromarray((greenEdges * 255).astype(np.uint8)).show()
 
     newSigma = input(f"sigma [{sigma}]: ")
     newShift = input(f"maxShift [{maxShift}]: ")
@@ -52,6 +49,8 @@ Image.fromarray((greenEdges * 255).astype(np.uint8)).save("greenEdges.jpg")
 
 leftImage = np.array(orig)
 rightImage = np.array(orig)
+leftMatches = np.zeros(leftImage.shape, np.uint8)
+rightMatches = np.zeros(rightImage.shape, np.uint8)
 
 for y in range(limY):
     print(f"Line {y+1} of {limY + 1}", end='\r')
@@ -64,56 +63,66 @@ for y in range(limY):
     greenStarts = []
     redEnds = []
     greenEnds = []
-    redRunStart = 0
-    greenRunStart = 0
-    lastRed = redLine[0]
-    lastGreen = greenLine[0]
+    lastRed = False
+    lastGreen = False
     lastRedChange = 0
     lastGreenChange = 0
 
-    # Get runs between edges >= maxShift, in red and green images
+    # TODO: Right to left from right side.  Reconcile.
+    # Find matching edges
 
     for x in range(limX):
         if redLine[x] != lastRed:
-            if redLine[x] and x > lastRedChange + maxShift:
-                # End of a run between edges
+            if not redLine[x]:
+                # End of an edge
                 redStarts.append(lastRedChange)
                 redEnds.append(x)
             lastRedChange = x
             lastRed = redLine[x]
 
         if greenLine[x] != lastGreen:
-            if greenLine[x] and x > lastGreenChange + maxShift:
-                # End of a run between edges
+            if not greenLine[x]:
+                # End of a green edge
                 greenStarts.append(lastGreenChange)
                 greenEnds.append(x)
             lastGreenChange = x
             lastGreen = greenLine[x]
     
-    # Find matching runs in red and green, and write shifted red...
-    redRunNumber = 0
-    greenRunNumber = 0
+    # Find matching red and green edges, and write shifted red...
+    redEdgeNumber = 0
+    greenEdgeNumber = 0
     redX = 0
     shiftedRedX = 0
     redStart = 0
-    while redRunNumber < len(redStarts) and greenRunNumber < len(greenStarts):
-        # Search for matching starts
-        if greenStarts[greenRunNumber] > redStarts[redRunNumber] + maxShift:
-            redRunNumber += 1
-        elif (redRunNumber < len(redStarts)-1 and
-                abs(redStarts[redRunNumber+1] - greenStarts[greenRunNumber]) <
-                abs(redStarts[redRunNumber] - greenStarts[greenRunNumber])):
-            redRunNumber += 1 # Next run is closer
-        elif greenStarts[greenRunNumber] < redStarts[redRunNumber] - maxShift:
-            greenRunNumber += 1
-        elif (greenRunNumber < len(greenStarts)-1 and
-                abs(greenStarts[greenRunNumber+1] - redStarts[redRunNumber]) <
-                abs(greenStarts[greenRunNumber] - redStarts[redRunNumber])):
-            greenRunNumber += 1 # Next run is closer
+    while redEdgeNumber < len(redStarts) and greenEdgeNumber < len(greenStarts):
+        # Search for matching edges
+        if greenStarts[greenEdgeNumber] > redStarts[redEdgeNumber] + maxShift:
+            for edgeX in range(redStarts[redEdgeNumber], redEnds[redEdgeNumber]):
+                leftMatches[y, edgeX, 0] = 255
+                leftMatches[y, edgeX, 1] = 255
+                leftMatches[y, edgeX, 2] = 255
+            redEdgeNumber += 1
+        elif greenStarts[greenEdgeNumber] < redStarts[redEdgeNumber] - maxShift:
+            for edgeX in range(greenStarts[greenEdgeNumber], greenEnds[greenEdgeNumber]):
+                leftMatches[y, edgeX, 0] = 255
+                leftMatches[y, edgeX, 1] = 255
+                leftMatches[y, edgeX, 2] = 255
+            greenEdgeNumber += 1
         else:
-            # Matching starts - note starting positions and look for matching ends
-            redStart = redStarts[redRunNumber]
-            greenStart = greenStarts[greenRunNumber]
+            # Matching starts
+            redStart = redStarts[redEdgeNumber]
+            greenStart = greenStarts[greenEdgeNumber]
+
+            mapcolour = (redEdgeNumber % 6) + 1
+
+            for edgeX in range(redStarts[redEdgeNumber], redEnds[redEdgeNumber]):
+                leftMatches[y, edgeX, 0] = (mapcolour & 1)  * 255
+                leftMatches[y, edgeX, 1] = (mapcolour >> 1 & 1) * 255
+                leftMatches[y, edgeX, 2] = (mapcolour >> 2 & 1) * 255
+            for edgeX in range(greenStarts[greenEdgeNumber], greenEnds[greenEdgeNumber]):
+                rightMatches[y, edgeX, 0] = (mapcolour & 1) * 255
+                rightMatches[y, edgeX, 1] = (mapcolour >> 1 & 1) * 255
+                rightMatches[y, edgeX, 2] = (mapcolour >> 2 & 1) * 255
 
             # Perform shifts, up to start
             if greenStart > shiftedRedX:
@@ -123,33 +132,8 @@ for y in range(limY):
                     redX += xStep
                 redX = redStart
                 shiftedRedX = greenStart
-
-            while redRunNumber < len(redEnds) and greenRunNumber < len(greenEnds):
-                if greenEnds[greenRunNumber] > redEnds[redRunNumber] + maxShift:
-                    redRunNumber += 1
-                elif (redRunNumber < len(redEnds)-1 and
-                        abs(redEnds[redRunNumber+1] - greenEnds[greenRunNumber]) <
-                        abs(redEnds[redRunNumber] - greenEnds[greenRunNumber])):
-                    redRunNumber += 1 # Next run is closer
-                elif greenEnds[greenRunNumber] < redEnds[redRunNumber] - maxShift:
-                    greenRunNumber += 1
-                elif (greenRunNumber < len(greenEnds)-1 and
-                        abs(greenEnds[greenRunNumber+1] - redEnds[redRunNumber]) <
-                        abs(greenEnds[greenRunNumber] - redEnds[redRunNumber])):
-                    greenRunNumber += 1
-                else:
-                    # Matching ends => matching RUNS - write shifted red pixels through range
-                    # Start point: shiftedRedX from redX
-                    # End point: greenEnd from redEnd
-                    xStep = (redEnds[redRunNumber] - redStart) / (greenEnds[greenRunNumber] - greenStart) 
-                    for x in range(shiftedRedX, greenEnds[greenRunNumber]):
-                        rightImage[y, x, 0] = redArray[y, round(redX)]
-                        redX += xStep
-
-                    redX = redEnds[redRunNumber]
-                    shiftedRedX = greenEnds[greenRunNumber]
-                    redRunNumber += 1
-                    greenRunNumber += 1
+            redEdgeNumber += 1
+            greenEdgeNumber += 1
 
     # Now finish line from redX to limX
     if shiftedRedX < limX:
@@ -159,4 +143,6 @@ for y in range(limY):
             redX += xStep
 
 Image.fromarray(rightImage).show()
-Image.fromarray(rightImage).save("rightImage.jpg")
+Image.fromarray(leftMatches).show()
+Image.fromarray(rightMatches).show()
+# Image.fromarray(rightImage).save("rightImage.jpg")
