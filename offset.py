@@ -9,6 +9,12 @@ from PIL import Image
 from PIL import ImageFilter
 from skimage.feature import canny
 
+def nearMatch(fromX, toX, prevMatchDict):
+    for x in range(fromX-1, fromX+2):
+        if x in prevMatchDict and prevMatchDict[x] in range(toX-1, toX+2):
+            return True
+    return False
+
 orig = Image.open("Alfa3_Marilin.jpg")
 limX, limY = orig.size
 maxShift = round(limX / 40)
@@ -27,6 +33,9 @@ while True:
     redEdges = canny(redArray, sigma, low_threshold, high_threshold, None, True)
     greenEdges = canny(greenArray, sigma, low_threshold, high_threshold, None, True)
 
+    Image.fromarray((redEdges * 255).astype(np.uint8)).show()
+    Image.fromarray((greenEdges * 255).astype(np.uint8)).show()
+    
     newSigma = input(f"sigma [{sigma}]: ")
     newShift = input(f"maxShift [{maxShift}]: ")
     newLow = input(f"Low join threshold [{low_threshold}]: ")
@@ -44,21 +53,19 @@ while True:
     if newHigh != "":
         high_threshold = float(newHigh)
 
-Image.fromarray((redEdges * 255).astype(np.uint8)).save("redEdges.jpg")
-Image.fromarray((greenEdges * 255).astype(np.uint8)).save("greenEdges.jpg")
 
 leftImage = np.array(orig)
 rightImage = np.array(orig)
-leftMatches = np.zeros(leftImage.shape, np.uint8)
-rightMatches = np.zeros(rightImage.shape, np.uint8)
+leftMatchesImage = np.zeros(leftImage.shape, np.uint8)
+rightMatchesImage = np.zeros(rightImage.shape, np.uint8)
+prevLineRedMatches = {}
+prevLineGreenMatches = {}
 
 for y in range(limY):
     print(f"Line {y+1} of {limY + 1}", end='\r')
     # Find any overlapping regions between edges, and shift channels to match in each output image
     redLine = redEdges[y]
     greenLine = greenEdges[y]
-    prevRedLine = redEdges[max(0, y-1)]
-    prevGreenLine = greenEdges[max(0, y-1)]
     redStarts = []
     greenStarts = []
     redEnds = []
@@ -94,35 +101,50 @@ for y in range(limY):
     redX = 0
     shiftedRedX = 0
     redStart = 0
+    thisLineRedMatches = {}
+    thisLineGreenMatches = {}
+
     while redEdgeNumber < len(redStarts) and greenEdgeNumber < len(greenStarts):
+        nextRedStart = redStarts[redEdgeNumber]
+        nextGreenStart = greenStarts[greenEdgeNumber]
         # Search for matching edges
-        if greenStarts[greenEdgeNumber] > redStarts[redEdgeNumber] + maxShift:
-            for edgeX in range(redStarts[redEdgeNumber], redEnds[redEdgeNumber]):
-                leftMatches[y, edgeX, 0] = 255
-                leftMatches[y, edgeX, 1] = 255
-                leftMatches[y, edgeX, 2] = 255
+
+        # Skip this red edge if too far to the left, or if nextGreenStart matched 
+        # the next redStart in the previous line
+        if (nextGreenStart > nextRedStart + maxShift
+            or (redEdgeNumber+1 < len(redStarts) and nearMatch(nextGreenStart, redStarts[redEdgeNumber+1], prevLineGreenMatches))):
+            for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
+                leftMatchesImage[y, edgeX, 0] = 255
+                leftMatchesImage[y, edgeX, 1] = 255
+                leftMatchesImage[y, edgeX, 2] = 255
             redEdgeNumber += 1
-        elif greenStarts[greenEdgeNumber] < redStarts[redEdgeNumber] - maxShift:
-            for edgeX in range(greenStarts[greenEdgeNumber], greenEnds[greenEdgeNumber]):
-                leftMatches[y, edgeX, 0] = 255
-                leftMatches[y, edgeX, 1] = 255
-                leftMatches[y, edgeX, 2] = 255
+        # Skip this green edge if too far to the left, or if nextRedStart matched 
+        # the next redStart in the previous line
+        elif (nextGreenStart < nextRedStart - maxShift
+            or (greenEdgeNumber+1 < len(greenStarts) and nearMatch(nextRedStart, greenStarts[greenEdgeNumber+1], prevLineRedMatches))):
+            for edgeX in range(nextGreenStart, greenEnds[greenEdgeNumber]):
+                rightMatchesImage[y, edgeX, 0] = 255
+                rightMatchesImage[y, edgeX, 1] = 255
+                rightMatchesImage[y, edgeX, 2] = 255
             greenEdgeNumber += 1
         else:
             # Matching starts
-            redStart = redStarts[redEdgeNumber]
-            greenStart = greenStarts[greenEdgeNumber]
+            redStart = nextRedStart
+            greenStart = nextGreenStart
+
+            thisLineRedMatches[redStart] = greenStart
+            thisLineGreenMatches[greenStart] = redStart
 
             mapcolour = (redEdgeNumber % 6) + 1
 
-            for edgeX in range(redStarts[redEdgeNumber], redEnds[redEdgeNumber]):
-                leftMatches[y, edgeX, 0] = (mapcolour & 1)  * 255
-                leftMatches[y, edgeX, 1] = (mapcolour >> 1 & 1) * 255
-                leftMatches[y, edgeX, 2] = (mapcolour >> 2 & 1) * 255
-            for edgeX in range(greenStarts[greenEdgeNumber], greenEnds[greenEdgeNumber]):
-                rightMatches[y, edgeX, 0] = (mapcolour & 1) * 255
-                rightMatches[y, edgeX, 1] = (mapcolour >> 1 & 1) * 255
-                rightMatches[y, edgeX, 2] = (mapcolour >> 2 & 1) * 255
+            for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
+                leftMatchesImage[y, edgeX, 0] = (mapcolour & 1)  * 255
+                leftMatchesImage[y, edgeX, 1] = (mapcolour >> 1 & 1) * 255
+                leftMatchesImage[y, edgeX, 2] = (mapcolour >> 2 & 1) * 255
+            for edgeX in range(nextGreenStart, greenEnds[greenEdgeNumber]):
+                rightMatchesImage[y, edgeX, 0] = (mapcolour & 1) * 255
+                rightMatchesImage[y, edgeX, 1] = (mapcolour >> 1 & 1) * 255
+                rightMatchesImage[y, edgeX, 2] = (mapcolour >> 2 & 1) * 255
 
             # Perform shifts, up to start
             if greenStart > shiftedRedX:
@@ -142,7 +164,10 @@ for y in range(limY):
             rightImage[y, x, 0] = redArray[y,min(round(redX),limX-1)]
             redX += xStep
 
+    prevLineGreenMatches = thisLineGreenMatches
+    prevLineRedMatches = thisLineRedMatches
+
 Image.fromarray(rightImage).show()
-Image.fromarray(leftMatches).show()
-Image.fromarray(rightMatches).show()
+Image.fromarray(leftMatchesImage).show()
+Image.fromarray(rightMatchesImage).show()
 # Image.fromarray(rightImage).save("rightImage.jpg")
