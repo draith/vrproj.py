@@ -19,8 +19,8 @@ further apart than half the total width of the image pair.
 in the original scene.)
 The bars should be added on each side of the image pair, not on each side of each image in the pair.)
 
-#offset.py
-This program takes as input a single red/cyan stereographic image, and generates a side-by-side colour image pair from it.
+# offset.py
+This program takes as input a single red/cyan anaglyphic stereographic image, and generates a side-by-side colour image pair from it.
 The program uses matching of edges detected using 'canny' edge detection.
 The user is first prompted for the maximum shift or offset (in pixels) between the red channel image
 (interpreted as the left view) and the cyan channel image (interpreted as the right view).
