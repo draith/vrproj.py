@@ -15,11 +15,11 @@ def nearMatch(fromX, toX, prevMatchDict):
             return True
     return False
 
-# def exrapolatedMatch(fromX, prevMatchDict):
-#     for x in range(fromX-1, fromX+2):
-#         if x in prevMatchDict:
-#             return prevMatchDict[x] + fromX - x
-#     return 0
+def exrapolatedMatch(fromX, prevMatchDict):
+    for x in range(fromX-1, fromX+2):
+        if x in prevMatchDict:
+            return prevMatchDict[x] + fromX - x
+    return 0
 
 filename = sys.argv[1] if len(sys.argv) > 1 else input("Filename: ")
 orig = Image.open(filename)
@@ -130,18 +130,25 @@ for y in range(limY):
             and nearMatch(nextGreenStart, redStarts[redEdgeNumber+1], prevLineGreenMatches))):
 
             # NO MATCH FOR RED EDGE
-            for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
-                leftMatchesImage[y, edgeX, 0] = 255
-                leftMatchesImage[y, edgeX, 1] = 255
-                leftMatchesImage[y, edgeX, 2] = 255
+            # Extrapolate match from previous line, if found
+            exrapolatedGreenStart = exrapolatedMatch(nextRedStart, prevLineRedMatches)
+            if exrapolatedGreenStart > 0:
+                redStart = nextRedStart
+                greenStart = exrapolatedGreenStart
+                thisLineRedMatches[redStart] = greenStart
+                # print(f"Extrapolated match red {redStart} to green {greenStart}")
+                for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
+                    leftMatchesImage[y, edgeX, 0] = 255
+                    leftMatchesImage[y, edgeX, 1] = 200
+                    leftMatchesImage[y, edgeX, 2] = 0
+            else:
+                for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
+                    leftMatchesImage[y, edgeX, 0] = 255
+                    leftMatchesImage[y, edgeX, 1] = 255
+                    leftMatchesImage[y, edgeX, 2] = 255
             
             redEdgeNumber += 1
 
-            # exrapolatedGreenStart = exrapolatedMatch(nextRedStart, prevLineRedMatches)
-            # if exrapolatedGreenStart > 0:
-            #     redStart = nextRedStart
-            #     greenStart = exrapolatedGreenStart
-            #     print(f"Extrapolated match red {redStart} to green {greenStart}")
 
         # Skip this green edge if too far to the left, or if nextRedStart matched 
         # the next greenStart in the previous line
@@ -151,18 +158,23 @@ for y in range(limY):
             and nearMatch(nextRedStart, greenStarts[greenEdgeNumber+1], prevLineRedMatches))):
 
             # NO MATCH FOR GREEN EDGE
-            for edgeX in range(nextGreenStart, greenEnds[greenEdgeNumber]):
-                rightMatchesImage[y, edgeX, 0] = 255
-                rightMatchesImage[y, edgeX, 1] = 255
-                rightMatchesImage[y, edgeX, 2] = 255
+            exrapolatedRedStart = exrapolatedMatch(nextGreenStart, prevLineGreenMatches)
+            if exrapolatedRedStart > 0:
+                greenStart = nextGreenStart
+                redStart = exrapolatedRedStart
+                thisLineGreenMatches[greenStart] = redStart
+                # print(f"Extrapolated match green {greenStart} to red {redStart}")
+                for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
+                    rightMatchesImage[y, edgeX, 0] = 255
+                    rightMatchesImage[y, edgeX, 1] = 200
+                    rightMatchesImage[y, edgeX, 2] = 0
+            else:
+                for edgeX in range(nextGreenStart, greenEnds[greenEdgeNumber]):
+                    rightMatchesImage[y, edgeX, 0] = 255
+                    rightMatchesImage[y, edgeX, 1] = 255
+                    rightMatchesImage[y, edgeX, 2] = 255
             
             greenEdgeNumber += 1
-
-            # exrapolatedRedStart = exrapolatedMatch(nextGreenStart, prevLineGreenMatches)
-            # if exrapolatedRedStart > 0:
-            #     greenStart = nextGreenStart
-            #     redStart = exrapolatedRedStart
-            #     print(f"Extrapolated match green {greenStart} to red {redStart}")
 
         else:
             # Matching starts
