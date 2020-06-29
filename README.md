@@ -36,3 +36,9 @@ shown that varying the sigma value is sufficient to optimise the sensitivity of 
 Generally, half of the maximum offset value is a good starting point.
 
 The output image is saved with the chosen sigma value appended to the main part of the filename.
+
+Dependencies
+------------
+Pillow
+NumPy
+Scikit image.
