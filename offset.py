@@ -15,12 +15,6 @@ def nearMatch(fromX, toX, prevMatchDict):
             return True
     return False
 
-def exrapolatedMatch(fromX, prevMatchDict):
-    for x in range(fromX-1, fromX+2):
-        if x in prevMatchDict:
-            return prevMatchDict[x] + fromX - x
-    return 0
-
 filename = sys.argv[1] if len(sys.argv) > 1 else input("Filename: ")
 orig = Image.open(filename)
 limX, limY = orig.size
@@ -77,14 +71,12 @@ for y in range(limY):
     greenStarts = []
     redEnds = []
     greenEnds = []
-    lastRed = False
-    lastGreen = False
+    lastRed = limX
+    lastGreen = limX
     lastRedChange = 0
     lastGreenChange = 0
-    mismatch = False
 
     # Find edges in Red and Green channels
-
     for x in range(limX):
         if redLine[x] != lastRed:
             if not redLine[x]:
@@ -111,8 +103,6 @@ for y in range(limY):
     greenStart = 0
     greenX = 0
     shiftedGreenX = 0
-    thisLineRedMatches = {}
-    thisLineGreenMatches = {}
 
     # Search for matching edges
     while redEdgeNumber < len(redStarts) and greenEdgeNumber < len(greenStarts):
@@ -130,22 +120,10 @@ for y in range(limY):
             and nearMatch(nextGreenStart, redStarts[redEdgeNumber+1], prevLineGreenMatches))):
 
             # NO MATCH FOR RED EDGE
-            # Extrapolate match from previous line, if found
-            exrapolatedGreenStart = exrapolatedMatch(nextRedStart, prevLineRedMatches)
-            if exrapolatedGreenStart > 0:
-                redStart = nextRedStart
-                greenStart = exrapolatedGreenStart
-                thisLineRedMatches[redStart] = greenStart
-                # print(f"Extrapolated match red {redStart} to green {greenStart}")
-                for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
-                    leftMatchesImage[y, edgeX, 0] = 255
-                    leftMatchesImage[y, edgeX, 1] = 200
-                    leftMatchesImage[y, edgeX, 2] = 0
-            else:
-                for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
-                    leftMatchesImage[y, edgeX, 0] = 255
-                    leftMatchesImage[y, edgeX, 1] = 255
-                    leftMatchesImage[y, edgeX, 2] = 255
+            for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
+                leftMatchesImage[y, edgeX, 0] = 255
+                leftMatchesImage[y, edgeX, 1] = 255
+                leftMatchesImage[y, edgeX, 2] = 255
             
             redEdgeNumber += 1
 
@@ -158,21 +136,10 @@ for y in range(limY):
             and nearMatch(nextRedStart, greenStarts[greenEdgeNumber+1], prevLineRedMatches))):
 
             # NO MATCH FOR GREEN EDGE
-            exrapolatedRedStart = exrapolatedMatch(nextGreenStart, prevLineGreenMatches)
-            if exrapolatedRedStart > 0:
-                greenStart = nextGreenStart
-                redStart = exrapolatedRedStart
-                thisLineGreenMatches[greenStart] = redStart
-                # print(f"Extrapolated match green {greenStart} to red {redStart}")
-                for edgeX in range(nextRedStart, redEnds[redEdgeNumber]):
-                    rightMatchesImage[y, edgeX, 0] = 255
-                    rightMatchesImage[y, edgeX, 1] = 200
-                    rightMatchesImage[y, edgeX, 2] = 0
-            else:
-                for edgeX in range(nextGreenStart, greenEnds[greenEdgeNumber]):
-                    rightMatchesImage[y, edgeX, 0] = 255
-                    rightMatchesImage[y, edgeX, 1] = 255
-                    rightMatchesImage[y, edgeX, 2] = 255
+            for edgeX in range(nextGreenStart, greenEnds[greenEdgeNumber]):
+                rightMatchesImage[y, edgeX, 0] = 255
+                rightMatchesImage[y, edgeX, 1] = 255
+                rightMatchesImage[y, edgeX, 2] = 255
             
             greenEdgeNumber += 1
 
@@ -180,9 +147,6 @@ for y in range(limY):
             # Matching starts
             redStart = nextRedStart
             greenStart = nextGreenStart
-
-            thisLineRedMatches[redStart] = greenStart
-            thisLineGreenMatches[greenStart] = redStart
 
             mapcolour = (redEdgeNumber % 6) + 1
 
@@ -198,23 +162,23 @@ for y in range(limY):
             redEdgeNumber += 1
             greenEdgeNumber += 1
 
-        # Perform shifts, up to redStart and greenStart
-        if greenStart > shiftedRedX:
-            xStep = (redStart - redX) / (greenStart - shiftedRedX)
-            for x in range(shiftedRedX, greenStart):
-                rightImage[y, x, 0] = redArray[y, round(redX)]
-                redX += xStep
-            redX = redStart
-            shiftedRedX = greenStart
-        
-        if redStart > shiftedGreenX:
-            xStep = (greenStart - greenX) / (redStart - shiftedGreenX)
-            for x in range(shiftedGreenX, redStart):
-                leftImage[y, x, 1] = greenArray[y, round(greenX)]
-                leftImage[y, x, 2] = blueArray[y, round(greenX)]
-                greenX += xStep
-            greenX = greenStart
-            shiftedGreenX = redStart
+            # Perform shifts, up to redStart and greenStart
+            if greenStart > shiftedRedX:
+                xStep = (redStart - redX) / (greenStart - shiftedRedX)
+                for x in range(shiftedRedX, greenStart):
+                    rightImage[y, x, 0] = redArray[y, round(redX)]
+                    redX += xStep
+                redX = redStart
+                shiftedRedX = greenStart
+            
+            if redStart > shiftedGreenX:
+                xStep = (greenStart - greenX) / (redStart - shiftedGreenX)
+                for x in range(shiftedGreenX, redStart):
+                    leftImage[y, x, 1] = greenArray[y, round(greenX)]
+                    leftImage[y, x, 2] = blueArray[y, round(greenX)]
+                    greenX += xStep
+                greenX = greenStart
+                shiftedGreenX = redStart
 
     # Now finish line from redX and greenX to limX
     if shiftedRedX < limX:
@@ -230,9 +194,6 @@ for y in range(limY):
             leftImage[y, x, 2] = blueArray[y, min(round(greenX), limX-1)]
             greenX += xStep
 
-    prevLineGreenMatches = thisLineGreenMatches
-    prevLineRedMatches = thisLineRedMatches
-
 Image.fromarray(leftMatchesImage).show()
 Image.fromarray(rightMatchesImage).show()
  
@@ -242,4 +203,4 @@ sideBySideImage.paste(Image.fromarray(rightImage), (limX, 0))
 sideBySideImage.show()
 
 nameBase, nameExt = os.path.splitext(filename)
-sideBySideImage.save(nameBase + "_SBS" + nameExt)
+sideBySideImage.save(nameBase + "_Sigma_" + str(sigma) + nameExt)
