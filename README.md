@@ -39,6 +39,6 @@ The output image is saved with the chosen sigma value appended to the main part 
 
 Dependencies
 ------------
-Pillow
-NumPy
-Scikit image.
+- Pillow
+- NumPy
+- Scikit image.
