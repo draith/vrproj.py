@@ -83,8 +83,10 @@ maxAlpha = vertRangeDeg * math.pi / 360     # alpha = vertical arc from centre
 
 files = os.listdir()
 
+targetname = sys.argv[1] if len(sys.argv) > 1 else "*"
+
 for file in files:
-    if fnmatch.fnmatch(file, "*.jpg") and not fnmatch.fnmatch(file, "*_vr.jpg"):
+    if fnmatch.fnmatch(file, targetname) and fnmatch.fnmatch(file, "*.jpg") and not fnmatch.fnmatch(file, "*_vr.jpg"):
         nameBase, nameExt = os.path.splitext(file)
         vrName = nameBase + "_vr" + nameExt
         if vrName not in files:
